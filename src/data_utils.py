@@ -40,7 +40,7 @@ def format(triplet):
     return triplets
 
 
-def process(prompt, amount=20000):
+def process(instruction, amount=20000):
     # Load from the auto-converted parquet branch to bypass the deprecated script
     ds = load_dataset(
         "Babelscape/rebel-dataset",
@@ -51,12 +51,12 @@ def process(prompt, amount=20000):
 
     processed = []
     for i in trange(amount):
-        triplet = format_triplets(ds["triplets"][i])
+        triplet = format(ds["triplets"][i])
         context = ds["context"][i].strip()
         if not triplet or not context or len(triplet) > 5:
             continue
         processed.append(
-            {"instruction": prompt, "input": context, "output": json.dumps(triplet)}
+            {"instruction": instruction, "input": context, "output": json.dumps(triplet)}
         )
     return processed
 
