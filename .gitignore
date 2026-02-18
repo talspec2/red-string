@@ -209,3 +209,6 @@ __marimo__/
 
 # Large Model Binary
 models/
+
+# Drive
+.tmp.driveupload/
