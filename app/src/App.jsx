@@ -11,7 +11,7 @@ import { Play, Activity, Database, Terminal } from 'lucide-react';
 /** * API endpoint for local LLM inference via Cloudflare tunnel.
  * @constant {string}
  */
-const API_URL = "https://leading-cloth-switched-reseller.trycloudflare.com/v1/completions"; 
+const API_URL = "https://fires-tried-controller-supervisors.trycloudflare.com/v1/completions"; 
 
 /**
  * RedStringApp Component
@@ -206,7 +206,7 @@ export default function RedStringApp() {
         <div style={{ width: '400px', borderRight: '1px solid #334155', display: 'flex', flexDirection: 'column', padding: '20px', backgroundColor: '#1e293b' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
             <Activity color="#ef4444" />
-            <h1 style={{ fontSize: '1.2rem', margin: 0, fontWeight: 'bold' }}>Red String v2.6</h1>
+            <h1 style={{ fontSize: '1.2rem', margin: 0, fontWeight: 'bold' }}>Red String Investigator</h1>
           </div>
 
           <textarea 
