@@ -1,14 +1,24 @@
 # src/data_utils.py
+"""
+Data processing utilities for the REBEL dataset.
+Handles data extraction, formatting, and prompt generation for instruction tuning.
+"""
+
 import json
 from tqdm import trange
 from datasets import load_dataset
 from .config import ALPACA_PROMPT
 
 
-def format(triplet):
+def format_triplet(triplet) -> list[dict]:
     """
-    Converts: "<triplet> Subject <subj> Object <obj> Relation"
-    Into: [{"head": "Subject", "tail": "Object", "type": "Relation"}]
+    Parses a raw triplet string into a structured dictionary format.
+
+    Args:
+        triplet (str): Raw string containing subject, object, and relation tags.
+
+    Returns:
+        list[dict]: A list of dictionaries, each containing 'head', 'type', and 'tail' keys.
     """
     triplets = []
     raw = triplet.strip().split("<triplet>")
@@ -34,13 +44,23 @@ def format(triplet):
             rel_type = second[1].strip()
 
             triplets.append({"head": subj, "type": rel_type, "tail": obj})
-        except Exception:
+        except (IndexError, ValueError):
             continue
 
     return triplets
 
 
-def process(instruction, amount=20000):
+def process(instruction, amount=20000) -> list[dict]:
+    """
+    Loads and processes the REBEL dataset into an instruction-tuning format.
+
+    Args:
+        instruction (str): The system instruction to prepend to the examples.
+        amount (int): The number of records to process from the dataset. Default is 20000.
+
+    Returns:
+        list[dict]: A list of formatted examples containing 'instruction', 'input', and 'output'.
+    """
     # Load from the auto-converted parquet branch to bypass the deprecated script
     ds = load_dataset(
         "Babelscape/rebel-dataset",
@@ -51,24 +71,38 @@ def process(instruction, amount=20000):
 
     processed = []
     for i in trange(amount):
-        triplet = format(ds["triplets"][i])
+        triplet = format_triplet(ds["triplets"][i])
         context = ds["context"][i].strip()
         if not triplet or not context or len(triplet) > 5:
             continue
         processed.append(
-            {"instruction": instruction, "input": context, "output": json.dumps(triplet)}
+            {
+                "instruction": instruction,
+                "input": context,
+                "output": json.dumps(triplet),
+            }
         )
     return processed
 
 
-def prompt(examples, tokenizer):
+def prompt(examples, tokenizer) -> dict:
+    """
+    Applies the Alpaca prompt template to the processed examples.
+
+    Args:
+        examples (dict): A dictionary of lists containing 'instruction', 'input', and 'output'.
+        tokenizer (PreTrainedTokenizer): The tokenizer used to append the EOS token.
+
+    Returns:
+        dict: A dictionary containing the formatted text strings under the 'text' key.
+    """
     instructions = examples["instruction"]
     inputs = examples["input"]
     outputs = examples["output"]
     texts = []
     EOS_TOKEN = tokenizer.eos_token
-    for instruction, input, output in zip(instructions, inputs, outputs):
-        text = ALPACA_PROMPT.format(instruction, input, output) + EOS_TOKEN
+    for instruction, text, output in zip(instructions, inputs, outputs):
+        text = ALPACA_PROMPT.format(instruction, text, output) + EOS_TOKEN
         texts.append(text)
     return {
         "text": texts,

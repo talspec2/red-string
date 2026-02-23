@@ -1,9 +1,13 @@
 # src/config.py
+"""
+Configuration module for model training and inference.
+Defines model parameters, LoRA configuration, and prompt templates.
+"""
 
 MODEL_NAME = "unsloth/Meta-Llama-3.1-8B"
 MAX_SEQ_LENGTH = 2048
 DTYPE = None  # None for auto detection
-LOAD_IN_4BIT = True
+LOAD_IN_4BIT = False
 TARGET_MODULES = [
     "q_proj",
     "k_proj",
@@ -14,7 +18,7 @@ TARGET_MODULES = [
     "down_proj",
 ]
 
-# The standard prompt format
+# Standard Alpaca instruction-tuning prompt format
 ALPACA_PROMPT = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 
 ### Instruction:
