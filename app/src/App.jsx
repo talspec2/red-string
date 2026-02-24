@@ -2,49 +2,31 @@
  * @file App.jsx
  * @description Main application component for the Red String investigation board.
  * Renders a force-directed graph to visualize entity relationships extracted via LLM inference.
+ * Includes entity resolution to merge semantic duplicates using cmpstr.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Play, Activity, Database, Terminal } from 'lucide-react';
+import { Play, Activity } from 'lucide-react';
+import { CmpStr } from 'cmpstr';
 
 // --- CONFIGURATION ---
-/** * API endpoint for local LLM inference via Cloudflare tunnel.
- * @constant {string}
- */
-const API_URL = "https://fires-tried-controller-supervisors.trycloudflare.com/v1/completions"; 
+const API_URL = "https://titles-soundtrack-models-respective.trycloudflare.com/v1/completions";
 
-/**
- * RedStringApp Component
- * * Manages state for text input, processing logs, and graph data.
- * Handles API communication and physical graph rendering.
- * * @returns {JSX.Element} The rendered application interface.
- */
 export default function RedStringApp() {
-  // Application State
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [logs, setLogs] = useState([]);
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   
-  // Interaction State
   const [hoverLink, setHoverLink] = useState(null);
   const [hoverNode, setHoverNode] = useState(null);
   
-  // Layout Refs
   const graphWrapperRef = useRef(null);
   const fgRef = useRef(); 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
-  /**
-   * Appends a new message to the top of the processing logs.
-   * * @param {string} msg - The log message to display.
-   */
   const addLog = (msg) => setLogs(prev => [msg, ...prev]);
 
-  /**
-   * Resize Observer Effect
-   * Dynamically adjusts the graph canvas size to fit its container.
-   */
   useEffect(() => {
     const resizeObserver = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
@@ -54,10 +36,6 @@ export default function RedStringApp() {
     return () => resizeObserver.disconnect();
   }, []);
 
-  /**
-   * Physics Tuning Effect
-   * Adjusts the d3-force parameters after initial rendering to optimize graph spread.
-   */
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (fgRef.current) {
@@ -72,11 +50,6 @@ export default function RedStringApp() {
     return () => clearTimeout(timeout);
   }, []);
 
-  /**
-   * Extracts a JSON array from a raw text response string.
-   * * @param {string} text - The raw text containing a JSON array.
-   * @returns {Array|null} The parsed JSON array, or null if parsing fails.
-   */
   const extractJSON = (text) => {
     try {
       const start = text.indexOf('[');
@@ -89,9 +62,68 @@ export default function RedStringApp() {
   };
 
   /**
-   * Updates the graph state with newly extracted relationship triples.
-   * * @param {Array<Object>} triples - An array of objects containing head, tail, and type.
+   * Normalizes an entity string for clean comparison.
+   * Removes punctuation, extra spaces, and common corporate suffixes.
    */
+  const normalizeEntity = (str) => {
+    if (!str) return "";
+    return str.toLowerCase()
+              .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")
+              .replace(/\b(inc|corp|llc|the|company|co)\b/g, "")
+              .replace(/\s{2,}/g, " ")
+              .trim();
+  };
+
+  /**
+   * Resolves a raw entity label against existing nodes to prevent duplication.
+   * Utilizes cmpstr for fuzzy matching to calculate a normalized similarity score.
+   */
+  const resolveEntity = (rawLabel, existingNodes) => {
+    const normalizedInput = normalizeEntity(rawLabel);
+    if (!normalizedInput || normalizedInput.length < 2) return null;
+
+    let bestMatch = null;
+    let highestScore = 0;
+
+    // Initialize cmpstr with the Levenshtein metric and case-insensitive flags
+    const cmp = CmpStr.create().setMetric('levenshtein').setFlags('i');
+
+    for (const node of existingNodes) {
+      const normalizedExisting = normalizeEntity(node.label);
+      if (!normalizedExisting) continue;
+      
+      // 1. Exact normalized match
+      if (normalizedInput === normalizedExisting) {
+        return node;
+      }
+
+      // 2. Substring match
+      if (normalizedInput.length > 3 && normalizedExisting.length > 3) {
+        if (normalizedExisting.includes(normalizedInput) || normalizedInput.includes(normalizedExisting)) {
+          return node;
+        }
+      }
+
+      // 3. Fuzzy match
+      try {
+        const result = cmp.test([normalizedInput], normalizedExisting);
+        if (result && result.match > highestScore) {
+          highestScore = result.match;
+          bestMatch = node;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // Threshold for accepting a fuzzy match
+    if (highestScore > 0.85) { 
+      return bestMatch;
+    }
+
+    return null;
+  };
+
   const updateGraph = (triples) => {
     if (!triples || triples.length === 0) return;
 
@@ -101,53 +133,52 @@ export default function RedStringApp() {
       let addedCount = 0;
 
       triples.forEach(t => {
-        const headId = t.head?.toLowerCase().trim();
-        const tailId = t.tail?.toLowerCase().trim();
-        const type = t.type?.toLowerCase().trim();
+        if (!t.head || !t.tail || !t.type) return;
 
-        if (!headId || !tailId) return;
-
-        // Ensure nodes exist before linking
-        if (!newNodes.find(n => n.id === headId)) {
-          newNodes.push({ id: headId, label: t.head, group: 1 });
-        }
-        if (!newNodes.find(n => n.id === tailId)) {
-          newNodes.push({ id: tailId, label: t.tail, group: 2 });
+        let headNode = resolveEntity(t.head, newNodes);
+        if (!headNode) {
+          headNode = { id: t.head.toLowerCase().trim(), label: t.head, group: 1 };
+          newNodes.push(headNode);
+        } else if (t.head.length > headNode.label.length) {
+          headNode.label = t.head; 
         }
 
-        // Prevent duplicate links
+        let tailNode = resolveEntity(t.tail, newNodes);
+        if (!tailNode) {
+          tailNode = { id: t.tail.toLowerCase().trim(), label: t.tail, group: 2 };
+          newNodes.push(tailNode);
+        } else if (t.tail.length > tailNode.label.length) {
+          tailNode.label = t.tail;
+        }
+
+        const type = t.type.toLowerCase().trim();
+
         const exists = newLinks.some(l => 
-          (l.source.id === headId || l.source === headId) && 
-          (l.target.id === tailId || l.target === tailId) &&
+          (l.source.id === headNode.id || l.source === headNode.id) && 
+          (l.target.id === tailNode.id || l.target === tailNode.id) &&
           l.type === type
         );
         
         if (!exists) {
-          newLinks.push({ source: headId, target: tailId, type: type, label: type });
+          newLinks.push({ source: headNode.id, target: tailNode.id, type: type, label: type });
           addedCount++;
         }
       });
 
-      if (addedCount > 0) addLog(`✨ Added ${addedCount} threads.`);
+      if (addedCount > 0) addLog(`Added ${addedCount} threads.`);
       return { nodes: newNodes, links: newLinks };
     });
   };
 
-  /**
-   * Executes the text analysis pipeline.
-   * Chunks input text into overlapping sentences and sends them sequentially to the API.
-   */
   const startInvestigation = async () => {
     if (!inputText) return;
     setIsProcessing(true);
-    addLog("🚀 Starting Investigation...");
+    addLog("Starting Investigation...");
 
-    // Segment text by sentence for batching
     const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
     const segments = Array.from(segmenter.segment(inputText));
     const sentences = segments.map(s => s.segment.trim()).filter(s => s.length > 0);
 
-    // Create sliding windows of 2 sentences each to preserve context
     const windows = [];
     for (let i = 0; i < sentences.length; i++) {
       const current = sentences[i];
@@ -157,10 +188,9 @@ export default function RedStringApp() {
 
     addLog(`Text chunked into ${windows.length} segments.`);
 
-    // Process windows sequentially to find fine-grained relationships
     for (let i = 0; i < windows.length; i++) {
       const windowText = windows[i];
-      addLog(`🔍 Scanning Window ${i+1}/${windows.length}...`);
+      addLog(`Scanning Window ${i+1}/${windows.length}...`);
 
       try {
         const payload = {
@@ -201,8 +231,6 @@ export default function RedStringApp() {
 
       <div style={{ display: 'flex', width: '100vw', height: '100vh', background: '#0f172a', color: '#f8fafc', fontFamily: 'sans-serif' }}>
         
-        {/* LEFT PANEL */}
-        {/* Input and Logging Sidebar */}
         <div style={{ width: '400px', borderRight: '1px solid #334155', display: 'flex', flexDirection: 'column', padding: '20px', backgroundColor: '#1e293b' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
             <Activity color="#ef4444" />
@@ -229,8 +257,6 @@ export default function RedStringApp() {
           </div>
         </div>
 
-        {/* RIGHT PANEL */}
-        {/* Force Directed Graph Visualization Area */}
         <div 
           ref={graphWrapperRef} 
           style={{ flexGrow: 1, position: 'relative', backgroundColor: '#020617', overflow: 'hidden' }}
@@ -242,15 +268,12 @@ export default function RedStringApp() {
             graphData={graphData}
             backgroundColor="#020617"
             
-            // Physics Simulation Parameters
             d3VelocityDecay={0.5} 
             cooldownTicks={150}   
             
-            // Event Handlers
             onLinkHover={setHoverLink}
             onNodeHover={setHoverNode}
             
-            // Link Styling
             linkColor={() => "rgba(239, 68, 68, 0.6)"}
             linkWidth={link => (link === hoverLink || link.source === hoverNode || link.target === hoverNode) ? 5 : 1.2}
             linkCurvature={0.1}
@@ -258,10 +281,8 @@ export default function RedStringApp() {
             linkDirectionalArrowRelPos={0.5} 
             linkDirectionalArrowColor={() => "#ef4444"}
             
-            // Node Styling
             nodeColor={() => "#f8fafc"}
 
-            // Custom Edge Label Rendering
             onRenderFramePost={(ctx, globalScale) => {
               graphData.links.forEach(link => {
                 const isHovered = (link === hoverLink) || (link.source === hoverNode) || (link.target === hoverNode);
@@ -282,7 +303,6 @@ export default function RedStringApp() {
                 ctx.save();
                 ctx.translate(textX, textY);
                 
-                // Label Background Container
                 ctx.fillStyle = 'rgba(2, 6, 23, 0.95)';
                 ctx.strokeStyle = '#ef4444';
                 ctx.lineWidth = 1 / globalScale;
@@ -291,7 +311,6 @@ export default function RedStringApp() {
                 ctx.fill();
                 ctx.stroke();
                 
-                // Label Text
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#ef4444'; 
@@ -300,7 +319,6 @@ export default function RedStringApp() {
               });
             }}
 
-            // Custom Node Rendering
             nodeCanvasObject={(node, ctx, globalScale) => {
               const label = node.label;
               const fontSize = 12 / globalScale;
@@ -308,7 +326,6 @@ export default function RedStringApp() {
               const color = '#f8fafc';
               const isHovered = node === hoverNode;
               
-              // Node Body
               ctx.shadowColor = color;
               ctx.shadowBlur = isHovered ? 20 : 8;
               ctx.beginPath();
@@ -317,7 +334,6 @@ export default function RedStringApp() {
               ctx.fill();
               ctx.shadowBlur = 0; 
 
-              // Node Text (Visible on hover or sufficient zoom)
               if (globalScale > 1.2 || isHovered) {
                 ctx.font = `bold ${fontSize}px "Courier New", monospace`;
                 ctx.textAlign = 'center';
