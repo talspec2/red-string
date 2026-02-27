@@ -8,9 +8,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { Play, Activity } from 'lucide-react';
 import { CmpStr } from 'cmpstr';
+import { forceX, forceY } from 'd3-force';
 
+// ---------------------
 // --- CONFIGURATION ---
-const API_URL = "https://titles-soundtrack-models-respective.trycloudflare.com/v1/completions";
+// ---------------------
+const API_URL = "https://page-flows-manga-fairy.trycloudflare.com/v1/completions";
+// ---------------------
+// ---------------------
+// ---------------------
 
 export default function RedStringApp() {
   const [inputText, setInputText] = useState("");
@@ -41,10 +47,13 @@ export default function RedStringApp() {
       if (fgRef.current) {
         const chargeForce = fgRef.current.d3Force('charge');
         if (chargeForce) {
-          chargeForce.strength(-60); 
-          chargeForce.distanceMax(120); 
+          chargeForce.strength(-50); 
+          chargeForce.distanceMax(110); 
         }
-        fgRef.current.d3Force('center').strength(0.20);
+        fgRef.current.d3Force('center', null);
+
+        fgRef.current.d3Force('x', forceX(0).strength(0.015));
+        fgRef.current.d3Force('y', forceY(0).strength(0.015));
       }
     }, 100);
     return () => clearTimeout(timeout);
@@ -69,7 +78,7 @@ export default function RedStringApp() {
     if (!str) return "";
     return str.toLowerCase()
               .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")
-              .replace(/\b(inc|corp|llc|the|company|co)\b/g, "")
+              .replace(/\b(inc|corp|llc|the|company|co|ltd)\b/g, "")
               .replace(/\s{2,}/g, " ")
               .trim();
   };
@@ -82,29 +91,56 @@ export default function RedStringApp() {
     const normalizedInput = normalizeEntity(rawLabel);
     if (!normalizedInput || normalizedInput.length < 2) return null;
 
+    const inputWords = normalizedInput.split(' ');
+    if (inputWords.length > 5) return null;
+
     let bestMatch = null;
     let highestScore = 0;
 
-    // Initialize cmpstr with the Levenshtein metric and case-insensitive flags
     const cmp = CmpStr.create().setMetric('levenshtein').setFlags('i');
+    const inputIsCapitalized = /^[A-Z]/.test(rawLabel.trim());
+
+    // Generic exclusionary dictionary to prevent broad categorical merges
+    const excludedGenerics = new Set(["us", "usa", "uk", "president", "state", "government", "department", "city", "county", "minister", "director", "secretary", "party", "union", "agency"]);
 
     for (const node of existingNodes) {
       const normalizedExisting = normalizeEntity(node.label);
       if (!normalizedExisting) continue;
       
-      // 1. Exact normalized match
-      if (normalizedInput === normalizedExisting) {
-        return node;
+      const existingWords = normalizedExisting.split(' ');
+      if (existingWords.length > 5) continue;
+
+      if (normalizedInput === normalizedExisting) return node;
+
+      const existingIsCapitalized = /^[A-Z]/.test(node.label.trim());
+
+      if (inputWords.length === 1 && existingWords.length > 1 && inputIsCapitalized) {
+        const acronym = existingWords.map(w => w[0]).join('');
+        if (normalizedInput === acronym) return node;
+      } else if (existingWords.length === 1 && inputWords.length > 1 && existingIsCapitalized) {
+        const acronym = inputWords.map(w => w[0]).join('');
+        if (normalizedExisting === acronym) return node;
       }
 
-      // 2. Substring match
-      if (normalizedInput.length > 3 && normalizedExisting.length > 3) {
-        if (normalizedExisting.includes(normalizedInput) || normalizedInput.includes(normalizedExisting)) {
+      const isSubset = inputWords.every(w => existingWords.includes(w)) ||
+                       existingWords.every(w => inputWords.includes(w));
+
+      if (isSubset) {
+        const wordDiff = Math.abs(inputWords.length - existingWords.length);
+        if (wordDiff <= 1) {
+          if (inputWords.length === 1 && !inputIsCapitalized && existingIsCapitalized) continue;
+          if (existingWords.length === 1 && !existingIsCapitalized && inputIsCapitalized) continue;
+          
+          // Block subset merges if the isolated word is a generic noun
+          if (inputWords.length === 1 && excludedGenerics.has(normalizedInput)) continue;
+          if (existingWords.length === 1 && excludedGenerics.has(normalizedExisting)) continue;
+
           return node;
         }
       }
 
-      // 3. Fuzzy match
+      if (Math.abs(normalizedInput.length - normalizedExisting.length) > 4) continue;
+
       try {
         const result = cmp.test([normalizedInput], normalizedExisting);
         if (result && result.match > highestScore) {
@@ -116,11 +152,7 @@ export default function RedStringApp() {
       }
     }
 
-    // Threshold for accepting a fuzzy match
-    if (highestScore > 0.85) { 
-      return bestMatch;
-    }
-
+    if (highestScore > 0.90) return bestMatch;
     return null;
   };
 
@@ -135,24 +167,65 @@ export default function RedStringApp() {
       triples.forEach(t => {
         if (!t.head || !t.tail || !t.type) return;
 
+        // Exclusionary filter
+        if (t.head.split(' ').length > 5 || t.tail.split(' ').length > 5) return;
+
         let headNode = resolveEntity(t.head, newNodes);
-        if (!headNode) {
-          headNode = { id: t.head.toLowerCase().trim(), label: t.head, group: 1 };
-          newNodes.push(headNode);
-        } else if (t.head.length > headNode.label.length) {
-          headNode.label = t.head; 
+        let tailNode = resolveEntity(t.tail, newNodes);
+
+        // FIX: Contextual Spawning Logic
+        // Default spawn near the center if it's a completely new isolated island
+        let spawnX = (Math.random() - 0.5) * 50;
+        let spawnY = (Math.random() - 0.5) * 50;
+
+        // If one node already exists, spawn the new node right next to it
+        if (headNode && headNode.x !== undefined && !tailNode) {
+          spawnX = headNode.x + (Math.random() - 0.5) * 30;
+          spawnY = headNode.y + (Math.random() - 0.5) * 30;
+        } else if (tailNode && tailNode.x !== undefined && !headNode) {
+          spawnX = tailNode.x + (Math.random() - 0.5) * 30;
+          spawnY = tailNode.y + (Math.random() - 0.5) * 30;
         }
 
-        let tailNode = resolveEntity(t.tail, newNodes);
+        // Process Head Entity
+        if (!headNode) {
+          headNode = { 
+            id: t.head.toLowerCase().trim(), 
+            label: t.head, 
+            group: 1,
+            x: spawnX, 
+            y: spawnY 
+          };
+          newNodes.push(headNode);
+        } else {
+          if (t.head.toLowerCase().trim() !== headNode.label.toLowerCase().trim()) {
+            console.log(`Resolved Entity [Head]: "${t.head}" merged into "${headNode.label}"`);
+            addLog("Entity resolved!");
+          }
+          if (t.head.length > headNode.label.length) headNode.label = t.head; 
+        }
+
+        // Process Tail Entity
         if (!tailNode) {
-          tailNode = { id: t.tail.toLowerCase().trim(), label: t.tail, group: 2 };
+          tailNode = { 
+            id: t.tail.toLowerCase().trim(), 
+            label: t.tail, 
+            group: 2,
+            x: spawnX, 
+            y: spawnY 
+          };
           newNodes.push(tailNode);
-        } else if (t.tail.length > tailNode.label.length) {
-          tailNode.label = t.tail;
+        } else {
+          if (t.tail.toLowerCase().trim() !== tailNode.label.toLowerCase().trim()) {
+            console.log(`Resolved Entity [Tail]: "${t.tail}" merged into "${tailNode.label}"`);
+            addLog("Entity resolved!");
+          }
+          if (t.tail.length > tailNode.label.length) tailNode.label = t.tail;
         }
 
         const type = t.type.toLowerCase().trim();
 
+        // Prevent duplicate links
         const exists = newLinks.some(l => 
           (l.source.id === headNode.id || l.source === headNode.id) && 
           (l.target.id === tailNode.id || l.target === tailNode.id) &&
