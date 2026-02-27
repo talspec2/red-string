@@ -45,8 +45,8 @@ Philippine president Manuel A . Roxas is currently featured on the front side of
 
 ## Architecture & Fine-Tuning
 
-* **Base Model:** Meta LLaMA 3.1 8B.
-* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent over-fitting to the trainig data and to lead to more robust relaton identifixation. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
+* **Base Model:** Meta LLaMA 3.1 8B. [TODO: Add architectural justification for selecting LLaMA 3.1 8B over smaller, faster encoder-only models like DeBERTa for information extraction.]
+* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent over-fitting to the training data and to lead to more robust relation identification. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
 * **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps.
 * **Quantization Strategy:** The final model is serialized in the GGUF format using 8-bit (Q8_0) quantization. During development, 4-bit quantization (Q4_K_M) was evaluated and yielded ~50% faster inference times. However, the 4-bit degradation severely impacted the model's ability to output valid JSON (requiring manual prompt pre-filling) and resulted in highly inaccurate relation extractions. Q8_0 was selected as the optimal deployment format, as the speed trade-off is negligible on GPU hardware while fully preserving output fidelity.
 
@@ -73,6 +73,8 @@ red-string/
 
 ## Dependencies
 
+### Backend
+
 The Python environment requires the following packages, detailed in `requirements.txt`:
 
 * `unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git`
@@ -84,7 +86,20 @@ The Python environment requires the following packages, detailed in `requirement
 * `trl`
 * `tqdm`
 
+### Frontend
+
+The React/Vite frontend relies on the following core libraries for visualization and resolution:
+
+* `react-force-graph-2d`
+* `d3-force`
+* `cmpstr`
+* [TODO: List any other major frontend dependencies here.]
+
 ## Evaluation & Performance Metrics
+
+[TODO: Add F1 score, precision, and recall metrics for relation extraction against a baseline to demonstrate ML rigor.]
+
+[TODO: Add hallucination rate or dropped context frequency metrics to quantify the model's failure modes and the effectiveness of the word-count filters.]
 
 The pipeline's extraction speed was benchmarked across various document lengths using the quantized Q8_0 model hosted via Cloudflare Tunnels. The sliding window approach ensures deep contextual extraction with the following performance observed on a standard GPU instance:
 
@@ -95,9 +110,9 @@ The pipeline's extraction speed was benchmarked across various document lengths 
 
 **Average Processing Speed:** ~14.3 words per second.
 
-## Getting Started
+## Getting Started & Deployment
 
-Training is not required to run the application. The project consists of a Python-based Colab server for model inference and a React frontend for visualization.
+Training is not required to run the application. The project currently consists of a Python-based Colab server for model inference and a React frontend for visualization.
 
 ### Prerequisites
 
@@ -113,7 +128,7 @@ Training is not required to run the application. The project consists of a Pytho
 
 ### Running the Client
 
-1. Open `app\src\App.jsx` and locate the configuration section at the top of the file.
+1. Open `app/src/App.jsx` and locate the configuration section at the top of the file.
 2. Paste the copied Cloudflare URL into the `API_URL` variable.
 3. Navigate to the frontend directory:
 
@@ -130,3 +145,15 @@ npm run dev
 ```
 
 5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
+
+### Local Execution & Containerization
+
+[TODO: Add instructions for running the backend locally via `llama-cpp-python` or `vLLM` for users with dedicated local GPU hardware.]
+
+[TODO: Add a `Dockerfile` and `docker-compose.yml` to the repository, and include containerized deployment instructions here for reproducible execution.]
+
+## Future Work & Limitations
+
+* **Computational Overhead:** [TODO: Discuss the computational overhead and latency constraints of the sliding window approach.]
+* **UI Scalability:** [TODO: Address scalability issues when rendering graphs with thousands of nodes in the DOM/Canvas, and outline potential rendering optimizations.]
+* **Entity Resolution:** [TODO: Mention potential improvements to the deterministic entity resolution logic, such as migrating from frontend string matching and Levenshtein distance to a dedicated backend vector embedding comparison.]
