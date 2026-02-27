@@ -14,7 +14,7 @@ The model was fine-tuned using a refined subset of the [REBEL dataset](https://h
 To optimize the data for LLM instruction-tuning, the following preprocessing steps were applied:
 1. **Parquet Integration:** Loaded from an auto-converted Parquet branch to bypass broken dataset loading scripts.
 2. **Tag Parsing & Formatting:** Native XML-style tags (`<triplet>`, `<subj>`, `<obj>`) were parsed and converted into a structured JSON dictionary format.
-3. **Heuristic Filtering:** Entries with malformed text or more than 5 distinct relationships were filtered out, yielding approximately 16,000 examples.
+3. **Heuristic Filtering:** Entries with malformed text or more than 5 distinct relationships were filtered out. The number of examples was limited to 20,000, and after filtering, this yielded approximately 16,000 examples.
 4. **Instruction Tuning:** The processed JSON triplets and context windows were mapped to a standard Alpaca instruction-tuning prompt format.
 
 ### Example Data Point
@@ -23,6 +23,11 @@ To optimize the data for LLM instruction-tuning, the following preprocessing ste
 ```text
 Philippine president Manuel A . Roxas is currently featured on the front side of the bill , while the Mayon Volcano and the whale shark ( locally known as "butanding" ) are featured on the reverse side .
 
+```
+
+**Unformatted Target**
+```text
+<triplet> Manuel A. Roxas <subj> Philippine president <obj> position held
 ```
 
 **JSON Formatted Target**
