@@ -6,26 +6,49 @@ Red String is an application that generates interactive knowledge graphs in real
 
 **Model Weights:** The fine-tuned and quantized GGUF model is publicly hosted on Hugging Face: [tspec2/redstring-8gb](https://huggingface.co/tspec2/redstring-8gb/).
 
+## Dataset & Processing
+
+The model was fine-tuned using a refined subset of the [REBEL dataset](https://huggingface.co/datasets/Babelscape/rebel-dataset) for relation extraction. 
+
+### Engineering Pipeline
+To optimize the data for LLM instruction-tuning, the following preprocessing steps were applied:
+1. **Parquet Integration:** Loaded from an auto-converted Parquet branch to bypass broken dataset loading scripts.
+2. **Tag Parsing & Formatting:** Native XML-style tags (`<triplet>`, `<subj>`, `<obj>`) were parsed and converted into a structured JSON dictionary format.
+3. **Heuristic Filtering:** Entries with malformed text or more than 5 distinct relationships were filtered out, yielding approximately 16,000 examples.
+4. **Instruction Tuning:** The processed JSON triplets and context windows were mapped to a standard Alpaca instruction-tuning prompt format.
+
+### Example Data Point
+
+**Context**
+```text
+Philippine president Manuel A . Roxas is currently featured on the front side of the bill , while the Mayon Volcano and the whale shark ( locally known as "butanding" ) are featured on the reverse side .
+
+```
+
+**JSON Formatted Target**
+
+```json
+{
+    "head": "Manuel A. Roxas",
+    "type": "position held",
+    "tail": "Philippine president"
+}
+
+```
+
 ## Features
 
-* **Real-Time Graph Generation:** Extracts entities and relationships from input text and visually constructs the graph dynamically.
+* **Real-Time Graph Generation:** Extracts relationships from input text and dynamically constructs the graph.
 * **Interactive Visualization:** Users can hover over nodes and edges to view specific connection details, and click and drag nodes or isolated graph components to reorganize the layout.
 * **Deep Context Parsing:** To overcome the model's limitation of extracting a small number of relationships per prompt, the application chunks input text into 2-sentence sliding windows. While this increases processing time, it ensures fine-grained, deep contextual relationship extraction across documents of any length.
+* **Entity Resolution:** To avoid multiple connections to the same thing, `Jensen Huang -> founder of -> Nvidia` and `Jensen Huang -> founder of -> Nvidia Inc.`, relations are normalized from common corporate/organizational suffixes. Entity resolution also utilizes token subset matching to connect partial names (e.g., "Trump" to "Donald Trump"), acronym detection, and Levenshtein distance fuzzy matching via `cmpstr` to resolve minor variations. To maintain graph accuracy, the system implements capitalization proxies to distinguish proper from common nouns, strict word-count limits to filter out LLM sentence hallucinations, and an exclusionary dictionary to prevent merging generic nouns (e.g., "President", "government"). When entities are merged, the graph dynamically upgrades node labels to display the most descriptive version of the term.
 
 ## Architecture & Fine-Tuning
 
 * **Base Model:** Meta LLaMA 3.1 8B.
-* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. Crucially, the adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
-* **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps. 
+* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent over-fitting to the trainig data and to lead to more robust relaton identifixation. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
+* **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps.
 * **Quantization Strategy:** The final model is serialized in the GGUF format using 8-bit (Q8_0) quantization. During development, 4-bit quantization (Q4_K_M) was evaluated and yielded ~50% faster inference times. However, the 4-bit degradation severely impacted the model's ability to output valid JSON (requiring manual prompt pre-filling) and resulted in highly inaccurate relation extractions. Q8_0 was selected as the optimal deployment format, as the speed trade-off is negligible on GPU hardware while fully preserving output fidelity.
-
-## Data Pipeline
-
-The model was trained on the REBEL dataset, which specializes in relation extraction. The data engineering pipeline involved several preprocessing steps:
-1.  **Parquet Integration:** The dataset was loaded from an auto-converted Parquet branch to bypass outdated and broken Hugging Face dataset loading scripts.
-2.  **Tag Parsing & Formatting:** The dataset's native string format (utilizing `<triplet>`, `<subj>`, and `<obj>` XML-style tags) was systematically parsed and converted into a structured JSON dictionary format.
-3.  **Heuristic Filtering:** To maintain high-quality target distributions and prevent sequence length issues, entries were filtered out if they contained malformed text or possessed more than 5 distinct relationships. This yielded a refined dataset of approximately 16,000 examples.
-4.  **Instruction Tuning:** The processed JSON triplets and context windows were mapped to a standard Alpaca instruction-tuning prompt format to condition the model for zero-shot extraction.
 
 ## Challenges & Solutions
 
@@ -90,14 +113,20 @@ Training is not required to run the application. The project consists of a Pytho
 
 ### Running the Client
 
-1. Navigate to the frontend directory:
+1. Open `app\src\App.jsx` and locate the configuration section at the top of the file.
+2. Paste the copied Cloudflare URL into the `API_URL` variable.
+3. Navigate to the frontend directory:
+
 ```bash
 cd app
+
 ```
-2. Open `App.jsx` and locate the configuration section at the top of the file.
-3. Paste the copied Cloudflare URL into the `API_URL` variable.
+
 4. Start the development server:
+
 ```bash
 npm run dev
+
 ```
+
 5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
