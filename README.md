@@ -22,10 +22,10 @@ To optimize the data for LLM instruction-tuning, the following preprocessing ste
 **Context**
 ```text
 Philippine president Manuel A . Roxas is currently featured on the front side of the bill , while the Mayon Volcano and the whale shark ( locally known as "butanding" ) are featured on the reverse side .
-
 ```
 
 **Unformatted Target**
+
 ```text
 <triplet> Manuel A. Roxas <subj> Philippine president <obj> position held
 ```
@@ -38,7 +38,6 @@ Philippine president Manuel A . Roxas is currently featured on the front side of
     "type": "position held",
     "tail": "Philippine president"
 }
-
 ```
 
 ## Features
@@ -50,7 +49,7 @@ Philippine president Manuel A . Roxas is currently featured on the front side of
 
 ## Architecture & Fine-Tuning
 
-* **Base Model:** Meta LLaMA 3.1 8B. [TODO: Add architectural justification for selecting LLaMA 3.1 8B over smaller, faster encoder-only models like DeBERTa for information extraction.]
+* **Base Model:** Meta LLaMA 3.1 8B.
 * **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent over-fitting to the training data and to lead to more robust relation identification. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
 * **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps.
 * **Quantization Strategy:** The final model is serialized in the GGUF format using 8-bit (Q8_0) quantization. During development, 4-bit quantization (Q4_K_M) was evaluated and yielded ~50% faster inference times. However, the 4-bit degradation severely impacted the model's ability to output valid JSON (requiring manual prompt pre-filling) and resulted in highly inaccurate relation extractions. Q8_0 was selected as the optimal deployment format, as the speed trade-off is negligible on GPU hardware while fully preserving output fidelity.
@@ -74,6 +73,7 @@ red-string/
 │   └── model_utils.py
 └── requirements.txt    # Python dependencies
 
+
 ```
 
 ## Dependencies
@@ -90,21 +90,44 @@ The Python environment requires the following packages, detailed in `requirement
 * `openai`
 * `trl`
 * `tqdm`
+* `sentence-transformers` (For evaluation)
 
 ### Frontend
 
 The React/Vite frontend relies on the following core libraries for visualization and resolution:
 
 * `react-force-graph-2d`
+* `lucid-react`
 * `d3-force`
 * `cmpstr`
-* [TODO: List any other major frontend dependencies here.]
 
 ## Evaluation & Performance Metrics
 
-[TODO: Add F1 score, precision, and recall metrics for relation extraction against a baseline to demonstrate ML rigor.]
+### Relation Extraction
 
-[TODO: Add hallucination rate or dropped context frequency metrics to quantify the model's failure modes and the effectiveness of the word-count filters.]
+The model was evaluated against an isolated 500-sample slice of the REBEL `test` split. Ground truth examples were filtered to contain no more than 5 triplets to match the constraints of the instruction-tuning phase. The extraction quality was measured across three distinct tiers of string and semantic alignment to account for valid variations in generation:
+
+1. **Exact Match:** Requires a perfect, case-insensitive string match for the head, relation type, and tail simultaneously.
+2. **Partial Match:** Allows a match if the generated relation string overlaps with the ground truth, and the predicted entities are valid substrings of the target entities (resolving false penalties for generations like "Eiffel Tower" vs. "The Eiffel Tower").
+3. **Semantic Match:** Converts triples to dense vector embeddings using `all-MiniLM-L6-v2` and calculates cosine similarity. Triples scoring above an 80% similarity threshold are matched. This captures factually similar relationships articulated with different vocabulary.
+
+**Results:**
+
+| Evaluation Tier | Precision | Recall | F1-Score |
+| --- | --- | --- | --- |
+| **Exact Match** | 0.4886 | 0.4568 | 0.4722 |
+| **Partial Match** | 0.5328 | 0.4981 | 0.5149 |
+| **Semantic Match** | 0.6118 | 0.5720 | 0.5912 |
+
+### Model Grounding
+
+To quantify failure modes regarding fabricated information, the model's generated entities were checked against the source text.
+
+* **Hallucination Rate: 6.09%**
+
+This indicates that approximately 94% of all generated entities are exact lexical substrings of the original input context, demonstrating strong grounding.
+
+### Inference Speed
 
 The pipeline's extraction speed was benchmarked across various document lengths using the quantized Q8_0 model hosted via Cloudflare Tunnels. The sliding window approach ensures deep contextual extraction with the following performance observed on a standard GPU instance:
 
@@ -136,30 +159,15 @@ Training is not required to run the application. The project currently consists 
 1. Open `app/src/App.jsx` and locate the configuration section at the top of the file.
 2. Paste the copied Cloudflare URL into the `API_URL` variable.
 3. Navigate to the frontend directory:
-
 ```bash
 cd app
-
 ```
-
 4. Start the development server:
-
 ```bash
 npm run dev
-
 ```
-
 5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
-
 
 ### Local Execution & Containerization
 
 [TODO: Add instructions for running the backend locally via `llama-cpp-python` or `vLLM` for users with dedicated local GPU hardware.]
-
-[TODO: Add a `Dockerfile` and `docker-compose.yml` to the repository, and include containerized deployment instructions here for reproducible execution.]
-
-## Future Work & Limitations
-
-* **Computational Overhead:** [TODO: Discuss the computational overhead and latency constraints of the sliding window approach.]
-* **UI Scalability:** [TODO: Address scalability issues when rendering graphs with thousands of nodes in the DOM/Canvas, and outline potential rendering optimizations.]
-* **Entity Resolution:** [TODO: Mention potential improvements to the deterministic entity resolution logic, such as migrating from frontend string matching and Levenshtein distance to a dedicated backend vector embedding comparison.]
