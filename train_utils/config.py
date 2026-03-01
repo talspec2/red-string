@@ -4,7 +4,7 @@ Configuration module for model training and inference.
 Defines model parameters, LoRA configuration, and prompt templates.
 """
 
-MODEL_NAME = "unsloth/Meta-Llama-3.1-8B"
+MODEL_NAME = "Qwen/Qwen3-4B-Base"
 MAX_SEQ_LENGTH = 2048
 DTYPE = None  # None for auto detection
 LOAD_IN_4BIT = False
