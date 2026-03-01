@@ -1,9 +1,10 @@
 unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
-torch
-transformers
+torch>=2.4.0
+transformers>=4.43.0
+peft>=0.11.0
 datasets
 llama-cpp-python
 openai
-trl
+trl==0.14.0
 tqdm
 sentence-transformers
