@@ -6,4 +6,4 @@ llama-cpp-python
 openai
 trl
 tqdm
-sentence-transformers (for evaluation)
+sentence-transformers
