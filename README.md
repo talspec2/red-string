@@ -6,6 +6,36 @@ Red String is an application that generates interactive knowledge graphs in real
 
 **Model Weights:** The fine-tuned and quantized GGUF model is publicly hosted on Hugging Face: [tspec2/redstring-8gb](https://huggingface.co/tspec2/redstring-8gb/).
 
+## Getting Started
+
+Training is not required to run the application. The project currently consists of a Python-based Colab server for model inference and a React frontend for visualization.
+
+### Prerequisites
+
+* Google Colab account (A standard T4 GPU instance is sufficient; higher RAM/GPU instances will yield faster inference).
+* Node.js and npm installed locally.
+
+### Running the Server
+
+1. Open `notebooks/server.ipynb` in Google Colab.
+2. Connect to a runtime equipped with a GPU.
+3. Run all cells in the notebook.
+4. The final cell execution will generate a secure Cloudflare URL (e.g., `https://<random-string>.trycloudflare.com`). Copy this URL.
+
+### Running the Client
+
+1. Open `app/src/App.jsx` and locate the configuration section at the top of the file.
+2. Paste the copied Cloudflare URL into the `API_URL` variable.
+3. Navigate to the frontend directory:
+```bash
+cd app
+```
+4. Start the development server:
+```bash
+npm run dev
+```
+5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
+
 ## Dataset & Processing
 
 The model was fine-tuned using a refined subset of the [REBEL dataset](https://huggingface.co/datasets/Babelscape/rebel-dataset) for relation extraction. 
@@ -137,36 +167,6 @@ The pipeline's extraction speed was benchmarked across various document lengths 
 * **1216 words:** 81 seconds (~15.0 words/sec)
 
 **Average Processing Speed:** ~14.3 words per second.
-
-## Getting Started & Deployment
-
-Training is not required to run the application. The project currently consists of a Python-based Colab server for model inference and a React frontend for visualization.
-
-### Prerequisites
-
-* Google Colab account (A standard T4 GPU instance is sufficient; higher RAM/GPU instances will yield faster inference).
-* Node.js and npm installed locally.
-
-### Running the Server
-
-1. Open `notebooks/server.ipynb` in Google Colab.
-2. Connect to a runtime equipped with a GPU.
-3. Run all cells in the notebook.
-4. The final cell execution will generate a secure Cloudflare URL (e.g., `https://<random-string>.trycloudflare.com`). Copy this URL.
-
-### Running the Client
-
-1. Open `app/src/App.jsx` and locate the configuration section at the top of the file.
-2. Paste the copied Cloudflare URL into the `API_URL` variable.
-3. Navigate to the frontend directory:
-```bash
-cd app
-```
-4. Start the development server:
-```bash
-npm run dev
-```
-5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
 
 ### Local Execution & Containerization
 
