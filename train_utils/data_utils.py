@@ -50,7 +50,7 @@ def format_triplet(triplet) -> list[dict]:
     return triplets
 
 
-def process(instruction, amount=20000) -> list[dict]:
+def process(instruction, amount=20000, split="train") -> list[dict]:
     """
     Loads and processes the REBEL dataset into an instruction-tuning format.
 
@@ -65,7 +65,7 @@ def process(instruction, amount=20000) -> list[dict]:
     ds = load_dataset(
         "Babelscape/rebel-dataset",
         name="default",
-        split="train",
+        split=split,
         revision="refs/convert/parquet",
     )
 
