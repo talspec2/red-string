@@ -34,7 +34,7 @@ def load_model() -> tuple:
             "up_proj",
             "down_proj",
         ],
-        lora_alpha=64,
+        lora_alpha=16,
         lora_dropout=0,  # 0 is optimized
         bias="none",  # none is optimized
         use_gradient_checkpointing="unsloth",  # True or "unsloth" for very long context

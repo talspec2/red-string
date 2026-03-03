@@ -168,6 +168,18 @@ The pipeline's extraction speed was benchmarked across various document lengths 
 
 **Average Processing Speed:** ~14.3 words per second.
 
-### Local Execution & Containerization
+## Conclusions & Future Work
 
-[TODO: Add instructions for running the backend locally via `llama-cpp-python` or `vLLM` for users with dedicated local GPU hardware.]
+### Conclusions
+
+The fine-tuned 8-bit quantized model proved highly effective for the character relationship extraction task. During inference, the model maintained a very low hallucination rate and achieved near 100% reliability in generating correctly formatted JSON outputs. In quantitative evaluations measuring semantic similarity, the model achieved an F1 score of 0.59.
+
+### Future Work
+
+Future iterations of this project will focus on optimizing the underlying language model and the fine-tuning pipeline. Planned experiments include:
+
+* **Model Scaling:** Testing the extraction capabilities using a smaller base model to potentially reduce overhead.
+* **Dataset Expansion:** Training on a larger subset of the available data to improve the model's generalization capabilities.
+* **Hyperparameter Optimization:** Experimenting with alternative LoRA (Low-Rank Adaptation) configurations to identify more efficient training regimes.
+
+The primary limitation dictating the implementation of these future improvements is the high computational expense associated with the model training process.

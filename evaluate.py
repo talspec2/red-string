@@ -3,6 +3,7 @@ import requests
 from tqdm import tqdm
 from datasets import load_dataset
 from train_utils.data_utils import format_triplet
+from train_utils.config import SYSTEM_INSTRUCTION
 
 # Import sentence_transformers for semantic matching
 try:
@@ -19,11 +20,8 @@ except ImportError:
 
 # --- Configuration ---
 SERVER_URL = (
-    "https://answered-tribunal-indiana-hypothetical.trycloudflare.com/v1/completions"
+    "https://went-operate-scanning-sim.trycloudflare.com/v1/completions"
 )
-SYSTEM_INSTRUCTION = "### Instruction:\nExtract all entity relationships from \
-                    the following text and output them as a JSON list of triples.\
-                    \n\n### Input:\n${windowText}\n\n### Response:\n"
 EVAL_SAMPLES = 500
 
 
@@ -56,7 +54,7 @@ def query_server(prompt_text):
         "prompt": prompt_text,
         "max_tokens": 512,
         "temperature": 0.1,
-        "stop": ["</s>", "<|eot_id|>"],
+        "stop": ["</s>", "<|eot_id|>", "###"],
     }
 
     try:
