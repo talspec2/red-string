@@ -6,6 +6,13 @@ Red String is an application that generates interactive knowledge graphs in real
 
 **Model Weights:** The fine-tuned and quantized GGUF model is publicly hosted on Hugging Face: [tspec2/redstring-8gb](https://huggingface.co/tspec2/redstring-8gb/).
 
+## Features
+
+* **Real-Time Graph Generation:** Extracts relationships from input text and dynamically constructs the graph.
+* **Interactive Visualization:** Users can hover over nodes and edges to view specific connection details, and click and drag nodes or isolated graph components to reorganize the layout.
+* **Deep Context Parsing:** To overcome the model's limitation of extracting a small number of relationships per prompt, the application chunks input text into 2-sentence sliding windows. While this increases processing time, it ensures fine-grained, deep contextual relationship extraction across documents of any length.
+* **Entity Resolution:** To avoid multiple connections to the same thing, `Jensen Huang -> founder of -> Nvidia` and `Jensen Huang -> founder of -> Nvidia Inc.`, relations are normalized from common corporate/organizational suffixes. Entity resolution also utilizes token subset matching to connect partial names (e.g., "Trump" to "Donald Trump"), acronym detection, and Levenshtein distance fuzzy matching via `cmpstr` to resolve minor variations. To maintain graph accuracy, the system implements capitalization proxies to distinguish proper from common nouns, strict word-count limits to filter out LLM sentence hallucinations, and an exclusionary dictionary to prevent merging generic nouns (e.g., "President", "government"). When entities are merged, the graph dynamically upgrades node labels to display the most descriptive version of the term.
+
 ## Getting Started
 
 Training is not required to run the application. The project currently consists of a Python-based Colab server for model inference and a React frontend for visualization.
@@ -35,6 +42,13 @@ cd app
 npm run dev
 ```
 5. Open your browser to the provided localhost address. Paste your text into the input area and click "Start Investigation" to begin generating the graph.
+
+## Architecture & Fine-Tuning
+
+* **Base Model:** Meta LLaMA 3.1 8B.
+* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent overfitting to the training data and to enable more robust relation identification. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual objective: to execute accurate semantic relationship extraction while strictly adhering to a JSON output structure.
+* **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps.
+* **Quantization Strategy:** The final model is serialized in the GGUF format using 8-bit (Q8_0) quantization. During development, 4-bit quantization (Q4_K_M) was evaluated and yielded ~50% faster inference times. However, the 4-bit degradation severely affected the model's ability to output valid JSON (requiring manual prompt pre-filling) and led to highly inaccurate relation extractions. Q8_0 was selected as the optimal deployment format, as the speed trade-off is negligible on GPU hardware while fully preserving output fidelity.
 
 ## Dataset & Processing
 
@@ -70,67 +84,6 @@ Philippine president Manuel A . Roxas is currently featured on the front side of
 }
 ```
 
-## Features
-
-* **Real-Time Graph Generation:** Extracts relationships from input text and dynamically constructs the graph.
-* **Interactive Visualization:** Users can hover over nodes and edges to view specific connection details, and click and drag nodes or isolated graph components to reorganize the layout.
-* **Deep Context Parsing:** To overcome the model's limitation of extracting a small number of relationships per prompt, the application chunks input text into 2-sentence sliding windows. While this increases processing time, it ensures fine-grained, deep contextual relationship extraction across documents of any length.
-* **Entity Resolution:** To avoid multiple connections to the same thing, `Jensen Huang -> founder of -> Nvidia` and `Jensen Huang -> founder of -> Nvidia Inc.`, relations are normalized from common corporate/organizational suffixes. Entity resolution also utilizes token subset matching to connect partial names (e.g., "Trump" to "Donald Trump"), acronym detection, and Levenshtein distance fuzzy matching via `cmpstr` to resolve minor variations. To maintain graph accuracy, the system implements capitalization proxies to distinguish proper from common nouns, strict word-count limits to filter out LLM sentence hallucinations, and an exclusionary dictionary to prevent merging generic nouns (e.g., "President", "government"). When entities are merged, the graph dynamically upgrades node labels to display the most descriptive version of the term.
-
-## Architecture & Fine-Tuning
-
-* **Base Model:** Meta LLaMA 3.1 8B.
-* **PEFT / LoRA Configuration:** The model was fine-tuned using Unsloth with a LoRA rank of 32 and an alpha of 16. An alpha of 16 was chosen to prevent over-fitting to the training data and to lead to more robust relation identification. The adapters were applied to *all* linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). This comprehensive targeting was necessary because the model was trained on a dual-objective: executing accurate semantic relationship extraction while strictly adhering to a JSON output structure.
-* **Optimization:** Training utilized the `adamw_8bit` optimizer, which provided stable convergence without the need for extensive hyperparameter sweeps.
-* **Quantization Strategy:** The final model is serialized in the GGUF format using 8-bit (Q8_0) quantization. During development, 4-bit quantization (Q4_K_M) was evaluated and yielded ~50% faster inference times. However, the 4-bit degradation severely impacted the model's ability to output valid JSON (requiring manual prompt pre-filling) and resulted in highly inaccurate relation extractions. Q8_0 was selected as the optimal deployment format, as the speed trade-off is negligible on GPU hardware while fully preserving output fidelity.
-
-## Challenges & Solutions
-
-* **Hosting the API:** Initial deployment attempts using ngrok resulted in frequent pipeline errors. The server architecture was migrated to Cloudflare Tunnels, which provided a more stable and consistent hosting environment, albeit with a slight reduction in speed.
-* **Contextual Limits:** The fine-tuned model exhibited a ceiling of extracting ~5 relations per prompt, mirroring the distribution of the training data. This was resolved on the frontend by implementing a sliding window text parser, trading overall processing speed for extraction depth.
-
-## Repository Structure
-
-```text
-red-string/
-├── app/                # React/Vite frontend application
-├── notebooks/
-│   ├── server.ipynb    # Inference server initialization and hosting
-│   └── train.ipynb     # Model fine-tuning notebook
-├── train_utils/        # Utilities for model training
-│   ├── config.py
-│   ├── data_utils.py
-│   └── model_utils.py
-└── requirements.txt    # Python dependencies
-
-
-```
-
-## Dependencies
-
-### Backend
-
-The Python environment requires the following packages, detailed in `requirements.txt`:
-
-* `unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git`
-* `torch`
-* `transformers`
-* `datasets`
-* `llama-cpp-python`
-* `openai`
-* `trl`
-* `tqdm`
-* `sentence-transformers` (For evaluation)
-
-### Frontend
-
-The React/Vite frontend relies on the following core libraries for visualization and resolution:
-
-* `react-force-graph-2d`
-* `lucid-react`
-* `d3-force`
-* `cmpstr`
-
 ## Evaluation & Performance Metrics
 
 ### Relation Extraction
@@ -139,7 +92,7 @@ The model was evaluated against an isolated 500-sample slice of the REBEL `test`
 
 1. **Exact Match:** Requires a perfect, case-insensitive string match for the head, relation type, and tail simultaneously.
 2. **Partial Match:** Allows a match if the generated relation string overlaps with the ground truth, and the predicted entities are valid substrings of the target entities (resolving false penalties for generations like "Eiffel Tower" vs. "The Eiffel Tower").
-3. **Semantic Match:** Converts triples to dense vector embeddings using `all-MiniLM-L6-v2` and calculates cosine similarity. Triples scoring above an 80% similarity threshold are matched. This captures factually similar relationships articulated with different vocabulary.
+3. **Semantic Match:** Converts triples to dense vector embeddings using `all-MiniLM-L6-v2` and calculates cosine similarity. Triples with a similarity score above the 80% threshold are matched. This captures factually similar relationships articulated with different vocabulary.
 
 **Results:**
 
@@ -168,6 +121,11 @@ The pipeline's extraction speed was benchmarked across various document lengths 
 
 **Average Processing Speed:** ~14.3 words per second.
 
+## Challenges & Solutions
+
+* **Hosting the API:** Initial deployment attempts using ngrok resulted in frequent pipeline errors. The server architecture was migrated to Cloudflare Tunnels, which provided a more stable and consistent hosting environment, albeit with a slight speed reduction.
+* **Contextual Limits:** The fine-tuned model exhibited a ceiling of extracting ~5 relations per prompt, mirroring the distribution of the training data. This was resolved on the frontend by implementing a sliding-window text parser, which trades off overall processing speed for extraction depth.
+
 ## Conclusions & Future Work
 
 ### Conclusions
@@ -182,4 +140,44 @@ Future iterations of this project will focus on optimizing the underlying langua
 * **Dataset Expansion:** Training on a larger subset of the available data to improve the model's generalization capabilities.
 * **Hyperparameter Optimization:** Experimenting with alternative LoRA (Low-Rank Adaptation) configurations to identify more efficient training regimes.
 
-The primary limitation dictating the implementation of these future improvements is the high computational expense associated with the model training process.
+The primary limitation on implementing these future improvements is the high computational cost of model training.
+
+## Repository Structure
+
+```text
+red-string/
+├── app/                # React/Vite frontend application
+├── notebooks/
+│   ├── server.ipynb    # Inference server initialization and hosting
+│   └── train.ipynb     # Model fine-tuning notebook
+├── train_utils/        # Utilities for model training
+│   ├── config.py
+│   ├── data_utils.py
+│   └── model_utils.py
+└── requirements.txt    # Python dependencies
+```
+
+## Dependencies
+
+### Backend
+
+The Python environment requires the following packages, detailed in `requirements.txt`:
+
+* `unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git`
+* `torch`
+* `transformers`
+* `datasets`
+* `llama-cpp-python`
+* `openai`
+* `trl`
+* `tqdm`
+* `sentence-transformers` (For evaluation)
+
+### Frontend
+
+The React/Vite frontend relies on the following core libraries for visualization and resolution:
+
+* `react-force-graph-2d`
+* `lucid-react`
+* `d3-force`
+* `cmpstr`
