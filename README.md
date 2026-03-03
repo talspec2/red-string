@@ -163,7 +163,7 @@ red-string/
 
 The Python environment requires the following packages, detailed in `requirements.txt`:
 
-* `unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git`
+* `unsloth`
 * `torch`
 * `transformers`
 * `datasets`
