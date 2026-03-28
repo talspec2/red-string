@@ -2,7 +2,7 @@
  * @file App.jsx
  * @description Main application component for the Red String investigation board.
  * Renders a force-directed graph to visualize entity relationships extracted via LLM inference.
- * Includes entity resolution to merge semantic duplicates using cmpstr.
+ * Includes hybrid entity resolution utilizing cmpstr, topological graph context, and in-browser semantic embeddings.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
@@ -13,16 +13,17 @@ import { forceX, forceY } from 'd3-force';
 // ---------------------
 // --- CONFIGURATION ---
 // ---------------------
-const API_URL = "https://went-operate-scanning-sim.trycloudflare.com/v1/completions";
-// ---------------------
-// ---------------------
+const API_URL = "https://buying-closer-losses-render.trycloudflare.com/v1/completions";
 // ---------------------
 
 export default function RedStringApp() {
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [logs, setLogs] = useState([]);
+  
+  // State for rendering, Ref for accurate async accumulation
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const graphDataRef = useRef({ nodes: [], links: [] });
   
   const [hoverLink, setHoverLink] = useState(null);
   const [hoverNode, setHoverNode] = useState(null);
@@ -30,6 +31,12 @@ export default function RedStringApp() {
   const graphWrapperRef = useRef(null);
   const fgRef = useRef(); 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  // Web Worker Refs & State
+  const [workerReady, setWorkerReady] = useState(false);
+  const workerRef = useRef(null);
+  const pendingRequests = useRef(new Map());
+  const requestIdCounter = useRef(0);
 
   const addLog = (msg) => setLogs(prev => [msg, ...prev]);
 
@@ -42,7 +49,9 @@ export default function RedStringApp() {
     return () => resizeObserver.disconnect();
   }, []);
 
+  // Initialize Physics & Web Worker
   useEffect(() => {
+    // Physics
     const timeout = setTimeout(() => {
       if (fgRef.current) {
         const chargeForce = fgRef.current.d3Force('charge');
@@ -51,13 +60,77 @@ export default function RedStringApp() {
           chargeForce.distanceMax(110); 
         }
         fgRef.current.d3Force('center', null);
-
         fgRef.current.d3Force('x', forceX(0).strength(0.015));
         fgRef.current.d3Force('y', forceY(0).strength(0.015));
       }
     }, 100);
-    return () => clearTimeout(timeout);
+
+    // Web Worker Initialization
+    workerRef.current = new Worker(new URL('./worker.js', import.meta.url), {
+        type: 'module'
+    });
+
+    workerRef.current.onmessage = (event) => {
+        const { type, status, similarity, id, targetVector, candidateVector, error } = event.data;
+
+        if (type === 'STATUS' && status === 'READY') {
+            setWorkerReady(true);
+            addLog("Embedding model loaded successfully.");
+        }
+        if (type === 'SIMILARITY_RESULT') {
+            if (pendingRequests.current.has(id)) {
+                const resolve = pendingRequests.current.get(id);
+                resolve({ similarity, targetVector, candidateVector });
+                pendingRequests.current.delete(id);
+            }
+        }
+        if (type === 'ERROR') {
+            console.error("Worker Error:", error);
+            if (id && pendingRequests.current.has(id)) pendingRequests.current.delete(id);
+        }
+    };
+
+    workerRef.current.postMessage({ type: 'INIT' });
+
+    return () => {
+        clearTimeout(timeout);
+        workerRef.current.terminate();
+    };
   }, []);
+
+  const calculateSemanticSimilarity = (targetText, candidateText, candidateEmbedding = null) => {
+    return new Promise((resolve) => {
+        const id = ++requestIdCounter.current;
+        pendingRequests.current.set(id, resolve);
+        workerRef.current.postMessage({
+            type: 'COMPUTE_SIMILARITY',
+            id: id,
+            payload: { targetText, candidateText, candidateEmbedding }
+        });
+    });
+  };
+
+  const calculateTopologicalScore = (proposedEdges, candidateId, currentLinks) => {
+    const candidateEdges = currentLinks.filter(l => 
+        (l.source.id || l.source) === candidateId || 
+        (l.target.id || l.target) === candidateId
+    );
+    
+    if (candidateEdges.length === 0) return 0;
+
+    const targetSignatures = new Set(proposedEdges.map(e => `${e.type}:${e.targetLabel.toLowerCase()}`));
+    const candidateSignatures = new Set(candidateEdges.map(e => {
+        const sourceId = e.source.id || e.source;
+        const targetId = e.target.id || e.target;
+        const neighborId = sourceId === candidateId ? targetId : sourceId;
+        return `${e.type}:${neighborId.toLowerCase()}`;
+    }));
+
+    const intersection = new Set([...targetSignatures].filter(x => candidateSignatures.has(x)));
+    const union = new Set([...targetSignatures, ...candidateSignatures]);
+    
+    return union.size === 0 ? 0 : intersection.size / union.size;
+  };
 
   const extractJSON = (text) => {
     try {
@@ -70,10 +143,6 @@ export default function RedStringApp() {
     }
   };
 
-  /**
-   * Normalizes an entity string for clean comparison.
-   * Removes punctuation, extra spaces, and common corporate suffixes.
-   */
   const normalizeEntity = (str) => {
     if (!str) return "";
     return str.toLowerCase()
@@ -83,11 +152,8 @@ export default function RedStringApp() {
               .trim();
   };
 
-  /**
-   * Resolves a raw entity label against existing nodes to prevent duplication.
-   * Utilizes cmpstr for fuzzy matching to calculate a normalized similarity score.
-   */
-  const resolveEntity = (rawLabel, existingNodes) => {
+  // Phase 1: Deterministic / Fuzzy Logic
+  const executeDeterministicFilters = (rawLabel, existingNodes) => {
     const normalizedInput = normalizeEntity(rawLabel);
     if (!normalizedInput || normalizedInput.length < 2) return null;
 
@@ -96,22 +162,17 @@ export default function RedStringApp() {
 
     let bestMatch = null;
     let highestScore = 0;
-
     const cmp = CmpStr.create().setMetric('levenshtein').setFlags('i');
     const inputIsCapitalized = /^[A-Z]/.test(rawLabel.trim());
-
-    // Generic exclusionary dictionary to prevent broad categorical merges
     const excludedGenerics = new Set(["us", "usa", "uk", "president", "state", "government", "department", "city", "county", "minister", "director", "secretary", "party", "union", "agency"]);
 
     for (const node of existingNodes) {
       const normalizedExisting = normalizeEntity(node.label);
       if (!normalizedExisting) continue;
       
-      const existingWords = normalizedExisting.split(' ');
-      if (existingWords.length > 5) continue;
-
       if (normalizedInput === normalizedExisting) return node;
 
+      const existingWords = normalizedExisting.split(' ');
       const existingIsCapitalized = /^[A-Z]/.test(node.label.trim());
 
       if (inputWords.length === 1 && existingWords.length > 1 && inputIsCapitalized) {
@@ -130,11 +191,8 @@ export default function RedStringApp() {
         if (wordDiff <= 1) {
           if (inputWords.length === 1 && !inputIsCapitalized && existingIsCapitalized) continue;
           if (existingWords.length === 1 && !existingIsCapitalized && inputIsCapitalized) continue;
-          
-          // Block subset merges if the isolated word is a generic noun
           if (inputWords.length === 1 && excludedGenerics.has(normalizedInput)) continue;
           if (existingWords.length === 1 && excludedGenerics.has(normalizedExisting)) continue;
-
           return node;
         }
       }
@@ -147,100 +205,138 @@ export default function RedStringApp() {
           highestScore = result.match;
           bestMatch = node;
         }
-      } catch (e) {
-        continue;
-      }
+      } catch (e) { continue; }
     }
 
     if (highestScore > 0.90) return bestMatch;
     return null;
   };
 
-  const updateGraph = (triples) => {
+  // Main Async Resolution Pipeline
+  const resolveEntityAsync = async (rawLabel, proposedEdges, windowText, existingNodes, existingLinks) => {
+    // 1. Check strict rules
+    const fuzzyMatch = executeDeterministicFilters(rawLabel, existingNodes);
+    if (fuzzyMatch) return fuzzyMatch;
+
+    // 2. Hybrid Topological + Semantic Check
+    let bestSemanticMatch = null;
+    let highestCombinedScore = 0;
+
+    for (const node of existingNodes) {
+        const topoScore = calculateTopologicalScore(proposedEdges, node.id, existingLinks);
+
+        if (topoScore > 0.1 && workerReady) {
+            const candidateText = node.source_chunks && node.source_chunks.length > 0 
+                ? node.source_chunks[0] 
+                : node.label;
+
+            const result = await calculateSemanticSimilarity(
+                windowText, 
+                candidateText, 
+                node.vector_embedding
+            );
+
+            if (result.candidateVector) {
+                node.vector_embedding = result.candidateVector; // Cache to prevent recalculation
+            }
+
+            const combinedScore = (topoScore * 0.4) + (result.similarity * 0.6);
+
+            if (combinedScore > highestCombinedScore) {
+                highestCombinedScore = combinedScore;
+                bestSemanticMatch = node;
+            }
+        }
+    }
+
+    if (highestCombinedScore > 0.75 && bestSemanticMatch) {
+        return bestSemanticMatch;
+    }
+
+    return null; // Return null if creating a new node is required
+  };
+
+  const processTriplesAsync = async (triples, windowText) => {
     if (!triples || triples.length === 0) return;
 
-    setGraphData(prev => {
-      const newNodes = [...prev.nodes];
-      const newLinks = [...prev.links];
-      let addedCount = 0;
+    let currentNodes = [...graphDataRef.current.nodes];
+    let currentLinks = [...graphDataRef.current.links];
+    let addedCount = 0;
 
-      triples.forEach(t => {
-        if (!t.head || !t.tail || !t.type) return;
+    for (const t of triples) {
+      if (!t.head || !t.tail || !t.type) continue;
+      if (t.head.split(' ').length > 5 || t.tail.split(' ').length > 5) continue;
 
-        // Exclusionary filter
-        if (t.head.split(' ').length > 5 || t.tail.split(' ').length > 5) return;
+      const proposedHeadEdges = [{ type: t.type, targetLabel: t.tail }];
+      const proposedTailEdges = [{ type: t.type, targetLabel: t.head }];
 
-        let headNode = resolveEntity(t.head, newNodes);
-        let tailNode = resolveEntity(t.tail, newNodes);
+      let headNode = await resolveEntityAsync(t.head, proposedHeadEdges, windowText, currentNodes, currentLinks);
+      let tailNode = await resolveEntityAsync(t.tail, proposedTailEdges, windowText, currentNodes, currentLinks);
 
-        // FIX: Contextual Spawning Logic
-        // Default spawn near the center if it's a completely new isolated island
-        let spawnX = (Math.random() - 0.5) * 50;
-        let spawnY = (Math.random() - 0.5) * 50;
+      let spawnX = (Math.random() - 0.5) * 50;
+      let spawnY = (Math.random() - 0.5) * 50;
 
-        // If one node already exists, spawn the new node right next to it
-        if (headNode && headNode.x !== undefined && !tailNode) {
-          spawnX = headNode.x + (Math.random() - 0.5) * 30;
-          spawnY = headNode.y + (Math.random() - 0.5) * 30;
-        } else if (tailNode && tailNode.x !== undefined && !headNode) {
-          spawnX = tailNode.x + (Math.random() - 0.5) * 30;
-          spawnY = tailNode.y + (Math.random() - 0.5) * 30;
+      if (headNode && headNode.x !== undefined && !tailNode) {
+        spawnX = headNode.x + (Math.random() - 0.5) * 30;
+        spawnY = headNode.y + (Math.random() - 0.5) * 30;
+      } else if (tailNode && tailNode.x !== undefined && !headNode) {
+        spawnX = tailNode.x + (Math.random() - 0.5) * 30;
+        spawnY = tailNode.y + (Math.random() - 0.5) * 30;
+      }
+
+      if (!headNode) {
+        headNode = { 
+          id: t.head.toLowerCase().trim(), 
+          label: t.head, 
+          group: 1, x: spawnX, y: spawnY,
+          source_chunks: [windowText]
+        };
+        currentNodes.push(headNode);
+      } else {
+        if (t.head.toLowerCase().trim() !== headNode.label.toLowerCase().trim()) {
+          console.log(`Resolved Entity [Head]: "${t.head}" merged into "${headNode.label}"`);
         }
+        if (t.head.length > headNode.label.length) headNode.label = t.head; 
+        if (!headNode.source_chunks) headNode.source_chunks = [];
+        if (!headNode.source_chunks.includes(windowText)) headNode.source_chunks.push(windowText);
+      }
 
-        // Process Head Entity
-        if (!headNode) {
-          headNode = { 
-            id: t.head.toLowerCase().trim(), 
-            label: t.head, 
-            group: 1,
-            x: spawnX, 
-            y: spawnY 
-          };
-          newNodes.push(headNode);
-        } else {
-          if (t.head.toLowerCase().trim() !== headNode.label.toLowerCase().trim()) {
-            console.log(`Resolved Entity [Head]: "${t.head}" merged into "${headNode.label}"`);
-            addLog("Entity resolved!");
-          }
-          if (t.head.length > headNode.label.length) headNode.label = t.head; 
+      if (!tailNode) {
+        tailNode = { 
+          id: t.tail.toLowerCase().trim(), 
+          label: t.tail, 
+          group: 2, x: spawnX, y: spawnY,
+          source_chunks: [windowText]
+        };
+        currentNodes.push(tailNode);
+      } else {
+        if (t.tail.toLowerCase().trim() !== tailNode.label.toLowerCase().trim()) {
+          console.log(`Resolved Entity [Tail]: "${t.tail}" merged into "${tailNode.label}"`);
         }
+        if (t.tail.length > tailNode.label.length) tailNode.label = t.tail;
+        if (!tailNode.source_chunks) tailNode.source_chunks = [];
+        if (!tailNode.source_chunks.includes(windowText)) tailNode.source_chunks.push(windowText);
+      }
 
-        // Process Tail Entity
-        if (!tailNode) {
-          tailNode = { 
-            id: t.tail.toLowerCase().trim(), 
-            label: t.tail, 
-            group: 2,
-            x: spawnX, 
-            y: spawnY 
-          };
-          newNodes.push(tailNode);
-        } else {
-          if (t.tail.toLowerCase().trim() !== tailNode.label.toLowerCase().trim()) {
-            console.log(`Resolved Entity [Tail]: "${t.tail}" merged into "${tailNode.label}"`);
-            addLog("Entity resolved!");
-          }
-          if (t.tail.length > tailNode.label.length) tailNode.label = t.tail;
-        }
+      const type = t.type.toLowerCase().trim();
 
-        const type = t.type.toLowerCase().trim();
+      const exists = currentLinks.some(l => 
+        (l.source.id === headNode.id || l.source === headNode.id) && 
+        (l.target.id === tailNode.id || l.target === tailNode.id) &&
+        l.type === type
+      );
+      
+      if (!exists) {
+        currentLinks.push({ source: headNode.id, target: tailNode.id, type: type, label: type });
+        addedCount++;
+      }
+    }
 
-        // Prevent duplicate links
-        const exists = newLinks.some(l => 
-          (l.source.id === headNode.id || l.source === headNode.id) && 
-          (l.target.id === tailNode.id || l.target === tailNode.id) &&
-          l.type === type
-        );
-        
-        if (!exists) {
-          newLinks.push({ source: headNode.id, target: tailNode.id, type: type, label: type });
-          addedCount++;
-        }
-      });
-
-      if (addedCount > 0) addLog(`Added ${addedCount} threads.`);
-      return { nodes: newNodes, links: newLinks };
-    });
+    if (addedCount > 0) {
+        addLog(`Added ${addedCount} threads.`);
+        graphDataRef.current = { nodes: currentNodes, links: currentLinks };
+        setGraphData({ nodes: currentNodes, links: currentLinks });
+    }
   };
 
   const startInvestigation = async () => {
@@ -274,9 +370,7 @@ export default function RedStringApp() {
 
         const response = await fetch(API_URL, {
           method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
 
@@ -284,7 +378,7 @@ export default function RedStringApp() {
         const rawText = data.choices[0].message ? data.choices[0].message.content : data.choices[0].text;
         const triples = extractJSON(rawText);
         
-        if (triples && triples.length > 0) updateGraph(triples);
+        await processTriplesAsync(triples, windowText);
 
       } catch (err) {
         addLog(`Error: ${err.message}`);
