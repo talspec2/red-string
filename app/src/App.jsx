@@ -5,6 +5,7 @@
  * Includes entity resolution to merge semantic duplicates using cmpstr.
  */
 import React, { useState, useRef, useEffect } from 'react';
+// import { deduplicateTriplets } from './utils/deduplicate';
 import ForceGraph2D from 'react-force-graph-2d';
 import { Play, Activity } from 'lucide-react';
 import { CmpStr } from 'cmpstr';
@@ -13,7 +14,7 @@ import { forceX, forceY } from 'd3-force';
 // ---------------------
 // --- CONFIGURATION ---
 // ---------------------
-const API_URL = "https://certified-were-intend-leave.trycloudflare.com/v1/completions";
+const API_URL = "https://jets-daisy-thee-serve.trycloudflare.com/v1/completions";
 // ---------------------
 // ---------------------
 // ---------------------
@@ -31,7 +32,20 @@ export default function RedStringApp() {
   const fgRef = useRef(); 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
+  const workerRef = useRef(null);
+
   const addLog = (msg) => setLogs(prev => [msg, ...prev]);
+
+  useEffect(() => {
+    // Vite specific syntax for loading a worker
+    workerRef.current = new Worker(new URL('./utils/worker.js', import.meta.url), {
+      type: 'module'
+    });
+
+    return () => {
+      workerRef.current.terminate(); // Clean up on unmount
+    };
+  }, []);
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver((entries) => {
@@ -58,6 +72,21 @@ export default function RedStringApp() {
     }, 100);
     return () => clearTimeout(timeout);
   }, []);
+
+  const runDeduplication = (triplets, threshold = 0.75) => {
+    return new Promise((resolve) => {
+      const handleMessage = (e) => {
+        if (e.data.status === 'complete') {
+          workerRef.current.removeEventListener('message', handleMessage);
+          resolve(e.data.result);
+        }
+      };
+
+      workerRef.current.addEventListener('message', handleMessage);
+      workerRef.current.postMessage({ triplets, threshold });
+    });
+  };
+
 
   const extractJSON = (text) => {
     try {
@@ -243,6 +272,90 @@ export default function RedStringApp() {
     });
   };
 
+  // const startInvestigation = async () => {
+  //   if (!inputText) return;
+  //   setIsProcessing(true);
+  //   addLog("Starting Investigation...");
+
+  //   const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
+  //   const segments = Array.from(segmenter.segment(inputText));
+  //   const sentences = segments.map(s => s.segment.trim()).filter(s => s.length > 0);
+
+  //   const windows = [];
+  //   for (let i = 0; i < sentences.length; i++) {
+  //     const current = sentences[i];
+  //     const next = sentences[i + 1] || ""; 
+  //     windows.push(`${current} ${next}`.trim());
+  //   }
+
+  //   addLog(`Text chunked into ${windows.length} segments.`);
+
+  //   for (let i = 0; i < windows.length; i++) {
+  //     const windowText = windows[i];
+  //     addLog(`Scanning Window ${i+1}/${windows.length}...`);
+
+  //     try {
+  //       const payload = {
+  //         prompt: `### Instruction:\nExtract all entity relationships from the following text and output them as a JSON list of triples.\n\n### Input:\n${windowText}\n\n### Response:\n`,
+  //         max_tokens: 512,
+  //         stop: ["###"]
+  //       };
+
+  //       const response = await fetch(API_URL, {
+  //         method: "POST",
+  //         headers: { 
+  //           "Content-Type": "application/json",
+  //         },
+  //         body: JSON.stringify(payload)
+  //       });
+
+  //       const data = await response.json();
+  //       const rawText = data.choices[0].message ? data.choices[0].message.content : data.choices[0].text;
+  //       const triples = extractJSON(rawText);
+        
+  //       if (triples && triples.length > 0) {
+  //         addLog(`Extracted ${triples.length} raw triples. Applying semantic deduplication...`);
+  //         const cleanTriples = await runDeduplication(triples);
+  //         addLog(`Kept ${cleanTriples.length} unique triples after deduplication.`);
+  //         updateGraph(cleanTriples);
+  //       }
+
+  //     } catch (err) {
+  //       addLog(`Error: ${err.message}`);
+  //     }
+  //   }
+
+  //   addLog("Performing final global deduplication...");
+    
+  //   // 1. Collect all relationships currently in the graph.
+  //   // After the graph renders, link.source and link.target become objects.
+  //   const currentTriplets = graphData.links.map(l => ({
+  //       head: l.source.label || l.source.id || l.source,
+  //       type: l.type,
+  //       tail: l.target.label || l.target.id || l.target
+  //   }));
+
+  //   if (currentTriplets.length > 0) {
+  //       // 2. Run deduplication on the ENTIRE set using a more aggressive threshold (0.70)
+  //       const finalCleanTriplets = await runDeduplication(currentTriplets, 0.70);
+        
+  //       addLog(`Global deduplication: merged ${currentTriplets.length} threads down to ${finalCleanTriplets.length}.`);
+
+  //       // 3. Completely reset the graph and rebuild it with the cleaned master list.
+  //       // Re-initializing prevents ghost nodes/links from windows that were merged.
+  //       setGraphData({ nodes: [], links: [] });
+        
+  //       // Use a timeout to ensure React processes the reset before we rebuild.
+  //       setTimeout(() => {
+  //           updateGraph(finalCleanTriplets);
+  //           setIsProcessing(false);
+  //           addLog("Investigation Complete.");
+  //       }, 200);
+  //   } else {
+  //       setIsProcessing(false);
+  //       addLog("Investigation Complete.");
+  //   }
+  // };
   const startInvestigation = async () => {
     if (!inputText) return;
     setIsProcessing(true);
@@ -261,6 +374,9 @@ export default function RedStringApp() {
 
     addLog(`Text chunked into ${windows.length} segments.`);
 
+    // Local array to store ALL raw triplets found across all windows
+    let allTripletsAccumulator = [];
+
     for (let i = 0; i < windows.length; i++) {
       const windowText = windows[i];
       addLog(`Scanning Window ${i+1}/${windows.length}...`);
@@ -274,9 +390,7 @@ export default function RedStringApp() {
 
         const response = await fetch(API_URL, {
           method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
 
@@ -284,15 +398,42 @@ export default function RedStringApp() {
         const rawText = data.choices[0].message ? data.choices[0].message.content : data.choices[0].text;
         const triples = extractJSON(rawText);
         
-        if (triples && triples.length > 0) updateGraph(triples);
+        if (triples && triples.length > 0) {
+          // Add raw triples directly to the master list
+          allTripletsAccumulator.push(...triples);
+          
+          // Show live progress on the graph (will be cleaned later)
+          updateGraph(triples);
+        }
 
       } catch (err) {
         addLog(`Error: ${err.message}`);
       }
     }
-    setIsProcessing(false);
-    addLog("Investigation Complete.");
+
+    // Perform global deduplication on all collected triplets
+    if (allTripletsAccumulator.length > 0) {
+        addLog(`Performing strict global deduplication on all ${allTripletsAccumulator.length} threads...`);
+        
+        // 0.90 merges highly semantically similar concepts
+        const finalCleanTriplets = await runDeduplication(allTripletsAccumulator, 0.90);
+        
+        addLog(`Global deduplication complete: ${finalCleanTriplets.length} unique threads identified.`);
+
+        // Reset and rebuild the graph
+        setGraphData({ nodes: [], links: [] });
+        
+        setTimeout(() => {
+            updateGraph(finalCleanTriplets);
+            setIsProcessing(false);
+            addLog("Investigation Complete.");
+        }, 300);
+    } else {
+        setIsProcessing(false);
+        addLog("Investigation Complete. No relationships found.");
+    }
   };
+
 
   return (
     <>
