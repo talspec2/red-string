@@ -3,7 +3,7 @@ import requests
 from tqdm import tqdm
 from datasets import load_dataset
 from train_utils.data_utils import format_triplet
-from train_utils.config import SYSTEM_INSTRUCTION
+from train_utils.config import SYSTEM_INSTRUCTION, ALPACA_PROMPT
 
 # Import sentence_transformers for semantic matching
 try:
@@ -20,7 +20,7 @@ except ImportError:
 
 # --- Configuration ---
 SERVER_URL = (
-    "https://went-operate-scanning-sim.trycloudflare.com/v1/completions"
+    "https://due-however-contractor-wait.trycloudflare.com/v1/completions"
 )
 EVAL_SAMPLES = 500
 
@@ -193,7 +193,11 @@ def evaluate():
     hallucinated_entities = 0
 
     for example in tqdm(test_data, desc="Evaluating"):
-        full_prompt = SYSTEM_INSTRUCTION.replace("${windowText}", example["input"])
+        full_prompt = ALPACA_PROMPT.format(
+            SYSTEM_INSTRUCTION, 
+            example["input"], 
+            ""
+        )
         response_text = query_server(full_prompt)
 
         try:

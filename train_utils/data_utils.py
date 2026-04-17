@@ -5,9 +5,16 @@ Handles data extraction, formatting, and prompt generation for instruction tunin
 """
 
 import json
+import torch
 from tqdm import trange
 from datasets import load_dataset
 from .config import ALPACA_PROMPT
+
+try:
+    from sentence_transformers import SentenceTransformer, util
+    st_model = SentenceTransformer("all-MiniLM-L6-v2")
+except ImportError:
+    st_model = None
 
 
 def format_triplet(triplet) -> list[dict]:
@@ -48,6 +55,54 @@ def format_triplet(triplet) -> list[dict]:
             continue
 
     return triplets
+
+###
+### TODO: INTEGRATE DEDUPLICATION INTO FRONT END
+###
+# def deduplicate_triplets(triplets, threshold=0.85):
+#     """
+#     Removes semantically redundant triplets from the model's output.
+#     """
+#     if not st_model:
+#         print("Warning: sentence-transformers not installed. Skipping deduplication.")
+#         return triplets
+
+#     if not triplets:
+#         return []
+
+#     valid_triplets = [t for t in triplets if isinstance(t, dict)]
+
+#     # Format triplets into strings for embedding
+#     triplet_strs = [
+#         f"{t.get('head', '')} {t.get('type', '')} {t.get('tail', '')}"
+#         for t in valid_triplets
+#     ]
+
+#     if not triplet_strs:
+#         return []
+
+#     # Generate embeddings
+#     embeddings = st_model.encode(triplet_strs, convert_to_tensor=True)
+
+#     # Compute cosine similarities
+#     cosine_scores = util.cos_sim(embeddings, embeddings)
+
+#     unique_triplets = []
+#     seen_indices = set()
+
+#     for i in range(len(triplet_strs)):
+#         if i in seen_indices:
+#             continue
+
+#         unique_triplets.append(valid_triplets[i])
+#         seen_indices.add(i)
+
+#         # Find all subsequent triplets that are semantically identical
+#         for j in range(i + 1, len(triplet_strs)):
+#             if cosine_scores[i][j].item() >= threshold:
+#                 seen_indices.add(j)
+
+#     return unique_triplets
 
 
 def process(instruction, amount=20000, split="train") -> list[dict]:

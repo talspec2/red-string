@@ -13,7 +13,7 @@ import { forceX, forceY } from 'd3-force';
 // ---------------------
 // --- CONFIGURATION ---
 // ---------------------
-const API_URL = "https://went-operate-scanning-sim.trycloudflare.com/v1/completions";
+const API_URL = "https://certified-were-intend-leave.trycloudflare.com/v1/completions";
 // ---------------------
 // ---------------------
 // ---------------------
