@@ -9,7 +9,6 @@ from train_utils.config import SYSTEM_INSTRUCTION, ALPACA_PROMPT
 try:
     from sentence_transformers import SentenceTransformer, util
 
-    # all-MiniLM-L6-v2 is fast and efficient for standard semantic similarity tasks
     st_model = SentenceTransformer("all-MiniLM-L6-v2")
 except ImportError:
     print(
@@ -20,7 +19,7 @@ except ImportError:
 
 # --- Configuration ---
 SERVER_URL = (
-    "https://due-however-contractor-wait.trycloudflare.com/v1/completions"
+    "https://printing-bookmarks-literary-measure.trycloudflare.com/v1/completions"
 )
 EVAL_SAMPLES = 500
 
@@ -182,7 +181,6 @@ def calc_metrics(tp, fp, fn):
 def evaluate():
     test_data = load_eval_data(EVAL_SAMPLES)
 
-    # Initialize metric counters
     metrics = {
         "exact": {"tp": 0, "fp": 0, "fn": 0},
         "partial": {"tp": 0, "fp": 0, "fn": 0},
@@ -195,7 +193,7 @@ def evaluate():
     for example in tqdm(test_data, desc="Evaluating"):
         full_prompt = ALPACA_PROMPT.format(
             SYSTEM_INSTRUCTION, 
-            example["input"], 
+            example["input"],
             ""
         )
         response_text = query_server(full_prompt)
@@ -209,7 +207,7 @@ def evaluate():
 
         truth_list = example["ground_truth"]
 
-        # 1. Exact Match
+        # exact match
         e_tp, e_fp, e_fn = evaluate_string_alignment(
             pred_list, truth_list, match_type="exact"
         )
@@ -217,7 +215,7 @@ def evaluate():
         metrics["exact"]["fp"] += e_fp
         metrics["exact"]["fn"] += e_fn
 
-        # 2. Partial Match
+        # partial string matching
         p_tp, p_fp, p_fn = evaluate_string_alignment(
             pred_list, truth_list, match_type="partial"
         )
@@ -225,15 +223,15 @@ def evaluate():
         metrics["partial"]["fp"] += p_fp
         metrics["partial"]["fn"] += p_fn
 
-        # 3. Semantic Similarity Match
+        # semantic similarity match (same threshold as frontend)
         s_tp, s_fp, s_fn = evaluate_semantic_alignment(
-            pred_list, truth_list, threshold=0.80
+            pred_list, truth_list, threshold=0.85
         )
         metrics["semantic"]["tp"] += s_tp
         metrics["semantic"]["fp"] += s_fp
         metrics["semantic"]["fn"] += s_fn
 
-        # 4. Calculate Hallucinations
+        # calculate hallucinations
         input_text_lower = example["input"].lower()
         for triplet in pred_list:
             if not isinstance(triplet, dict):
@@ -257,20 +255,31 @@ def evaluate():
         else 0
     )
 
-    # Output Results
-    print("\n" + "=" * 40)
+    # Format Results
+    output_lines = []
+    output_lines.append("=" * 40)
     for eval_type in ["exact", "partial", "semantic"]:
         p, r, f1 = calc_metrics(
             metrics[eval_type]["tp"], metrics[eval_type]["fp"], metrics[eval_type]["fn"]
         )
-        print(f"--- {eval_type.capitalize()} Match Results ---")
-        print(f"Precision:         {p:.4f}")
-        print(f"Recall:            {r:.4f}")
-        print(f"F1-Score:          {f1:.4f}\n")
+        output_lines.append(f"--- {eval_type.capitalize()} Match Results ---")
+        output_lines.append(f"Precision:         {p:.4f}")
+        output_lines.append(f"Recall:            {r:.4f}")
+        output_lines.append(f"F1-Score:          {f1:.4f}\n")
 
-    print("--- Grounding ---")
-    print(f"Hallucination Rate: {hallucination_rate:.2%}")
-    print("=" * 40)
+    output_lines.append("--- Grounding ---")
+    output_lines.append(f"Hallucination Rate: {hallucination_rate:.2%}")
+    output_lines.append("=" * 40)
+    
+    final_output = "\n".join(output_lines)
+    
+    # Print to console
+    print("\n" + final_output)
+    
+    # Export to text file
+    with open("results1.txt", "w", encoding="utf-8") as f:
+        f.write(final_output)
+    print("\nResults successfully exported to results.txt")
 
 
 if __name__ == "__main__":

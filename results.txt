@@ -1,0 +1,19 @@
+========================================
+--- Exact Match Results ---
+Precision:         0.5061
+Recall:            0.4643
+F1-Score:          0.4843
+
+--- Partial Match Results ---
+Precision:         0.5539
+Recall:            0.5081
+F1-Score:          0.5300
+
+--- Semantic Match Results ---
+Precision:         0.6057
+Recall:            0.5557
+F1-Score:          0.5796
+
+--- Grounding ---
+Hallucination Rate: 6.21%
+========================================

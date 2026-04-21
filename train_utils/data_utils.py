@@ -5,16 +5,9 @@ Handles data extraction, formatting, and prompt generation for instruction tunin
 """
 
 import json
-import torch
 from tqdm import trange
 from datasets import load_dataset
 from .config import ALPACA_PROMPT
-
-try:
-    from sentence_transformers import SentenceTransformer, util
-    st_model = SentenceTransformer("all-MiniLM-L6-v2")
-except ImportError:
-    st_model = None
 
 
 def format_triplet(triplet) -> list[dict]:
