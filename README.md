@@ -12,6 +12,7 @@ Red String is an application that generates interactive knowledge graphs in real
 * **Interactive Visualization:** Users can hover over nodes and edges to view specific connection details, and click and drag nodes or isolated graph components to reorganize the layout.
 * **Deep Context Parsing:** To overcome the model's limitation of extracting a small number of relationships per prompt, the application chunks input text into 2-sentence sliding windows. While this increases processing time, it ensures fine-grained, deep contextual relationship extraction across documents of any length.
 * **Entity Resolution:** To avoid multiple connections to the same thing, `Jensen Huang -> founder of -> Nvidia` and `Jensen Huang -> founder of -> Nvidia Inc.`, relations are normalized from common corporate/organizational suffixes. Entity resolution also utilizes token subset matching to connect partial names (e.g., "Trump" to "Donald Trump"), acronym detection, and Levenshtein distance fuzzy matching via `cmpstr` to resolve minor variations. To maintain graph accuracy, the system implements capitalization proxies to distinguish proper from common nouns, strict word-count limits to filter out LLM sentence hallucinations, and an exclusionary dictionary to prevent merging generic nouns (e.g., "President", "government"). When entities are merged, the graph dynamically upgrades node labels to display the most descriptive version of the term.
+* **Semantic Graph Deduplication:** Because the LLM may extract the same factual relationship using different phrasing across different context windows (e.g., "Pope Leo" vs. "The Pope"), the application performs a global semantic deduplication pass. It utilizes a background Web Worker running `@huggingface/transformers` to generate dense vector embeddings for every extracted triplet using the `all-MiniLM-L6-v2` model. A cosine similarity threshold is then applied to merge semantically identical threads, ensuring a clean, uncluttered final graph without freezing the main UI thread.
 
 ## Getting Started
 
@@ -98,17 +99,17 @@ The model was evaluated against an isolated 500-sample slice of the REBEL `test`
 
 | Evaluation Tier | Precision | Recall | F1-Score |
 | --- | --- | --- | --- |
-| **Exact Match** | 0.4886 | 0.4568 | 0.4722 |
-| **Partial Match** | 0.5328 | 0.4981 | 0.5149 |
-| **Semantic Match** | 0.6118 | 0.5720 | 0.5912 |
+| **Exact Match** | 50.61 | 46.43 | 48.43 |
+| **Partial Match** | 55.39 | 50.81 | 53.00 |
+| **Semantic Match** | 60.57 | 55.57 | 57.96 |
 
 ### Model Grounding
 
 To quantify failure modes regarding fabricated information, the model's generated entities were checked against the source text.
 
-* **Hallucination Rate: 6.09%**
+* **Hallucination Rate: 6.21%**
 
-This indicates that approximately 94% of all generated entities are exact lexical substrings of the original input context, demonstrating strong grounding.
+This indicates that approximately 94% of all generated entities are exact lexical substrings of the original input context.
 
 ### Inference Speed
 
@@ -130,7 +131,7 @@ The pipeline's extraction speed was benchmarked across various document lengths 
 
 ### Conclusions
 
-The fine-tuned 8-bit quantized model proved highly effective for the character relationship extraction task. During inference, the model maintained a very low hallucination rate and achieved near 100% reliability in generating correctly formatted JSON outputs. In quantitative evaluations measuring semantic similarity, the model achieved an F1 score of 0.59.
+The fine-tuned 8-bit quantized model proved highly effective for the character relationship extraction task. During inference, the model maintained a very low hallucination rate and achieved near 100% reliability in generating correctly formatted JSON outputs. In quantitative evaluations measuring semantic similarity, the model achieved an F1 score of 57.96.
 
 ### Future Work
 
@@ -171,7 +172,7 @@ The Python environment requires the following packages, detailed in `requirement
 * `openai`
 * `trl`
 * `tqdm`
-* `sentence-transformers` (For evaluation)
+* `sentence-transformers`
 
 ### Frontend
 

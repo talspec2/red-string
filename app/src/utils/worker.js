@@ -1,13 +1,8 @@
 import { pipeline, cos_sim, env } from '@huggingface/transformers';
 
-// 1. Force WebAssembly to load from the CDN to prevent Vite from returning HTML
-// env.backends.onnx.wasm.numThreads = 1;
-
-// 2. Disable local model checks and force remote Hugging Face Hub fetching
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 
-// 3. Disable caching to force active network requests
 env.useBrowserCache = false;
 
 class EmbeddingPipeline {

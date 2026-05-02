@@ -14,7 +14,7 @@ import { forceX, forceY } from 'd3-force';
 // ---------------------
 // --- CONFIGURATION ---
 // ---------------------
-const API_URL = "https://jets-daisy-thee-serve.trycloudflare.com/v1/completions";
+const API_URL = "https://enhancing-arthritis-injection-connected.trycloudflare.com/v1/completions";
 // ---------------------
 // ---------------------
 // ---------------------
@@ -272,90 +272,6 @@ export default function RedStringApp() {
     });
   };
 
-  // const startInvestigation = async () => {
-  //   if (!inputText) return;
-  //   setIsProcessing(true);
-  //   addLog("Starting Investigation...");
-
-  //   const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
-  //   const segments = Array.from(segmenter.segment(inputText));
-  //   const sentences = segments.map(s => s.segment.trim()).filter(s => s.length > 0);
-
-  //   const windows = [];
-  //   for (let i = 0; i < sentences.length; i++) {
-  //     const current = sentences[i];
-  //     const next = sentences[i + 1] || ""; 
-  //     windows.push(`${current} ${next}`.trim());
-  //   }
-
-  //   addLog(`Text chunked into ${windows.length} segments.`);
-
-  //   for (let i = 0; i < windows.length; i++) {
-  //     const windowText = windows[i];
-  //     addLog(`Scanning Window ${i+1}/${windows.length}...`);
-
-  //     try {
-  //       const payload = {
-  //         prompt: `### Instruction:\nExtract all entity relationships from the following text and output them as a JSON list of triples.\n\n### Input:\n${windowText}\n\n### Response:\n`,
-  //         max_tokens: 512,
-  //         stop: ["###"]
-  //       };
-
-  //       const response = await fetch(API_URL, {
-  //         method: "POST",
-  //         headers: { 
-  //           "Content-Type": "application/json",
-  //         },
-  //         body: JSON.stringify(payload)
-  //       });
-
-  //       const data = await response.json();
-  //       const rawText = data.choices[0].message ? data.choices[0].message.content : data.choices[0].text;
-  //       const triples = extractJSON(rawText);
-        
-  //       if (triples && triples.length > 0) {
-  //         addLog(`Extracted ${triples.length} raw triples. Applying semantic deduplication...`);
-  //         const cleanTriples = await runDeduplication(triples);
-  //         addLog(`Kept ${cleanTriples.length} unique triples after deduplication.`);
-  //         updateGraph(cleanTriples);
-  //       }
-
-  //     } catch (err) {
-  //       addLog(`Error: ${err.message}`);
-  //     }
-  //   }
-
-  //   addLog("Performing final global deduplication...");
-    
-  //   // 1. Collect all relationships currently in the graph.
-  //   // After the graph renders, link.source and link.target become objects.
-  //   const currentTriplets = graphData.links.map(l => ({
-  //       head: l.source.label || l.source.id || l.source,
-  //       type: l.type,
-  //       tail: l.target.label || l.target.id || l.target
-  //   }));
-
-  //   if (currentTriplets.length > 0) {
-  //       // 2. Run deduplication on the ENTIRE set using a more aggressive threshold (0.70)
-  //       const finalCleanTriplets = await runDeduplication(currentTriplets, 0.70);
-        
-  //       addLog(`Global deduplication: merged ${currentTriplets.length} threads down to ${finalCleanTriplets.length}.`);
-
-  //       // 3. Completely reset the graph and rebuild it with the cleaned master list.
-  //       // Re-initializing prevents ghost nodes/links from windows that were merged.
-  //       setGraphData({ nodes: [], links: [] });
-        
-  //       // Use a timeout to ensure React processes the reset before we rebuild.
-  //       setTimeout(() => {
-  //           updateGraph(finalCleanTriplets);
-  //           setIsProcessing(false);
-  //           addLog("Investigation Complete.");
-  //       }, 200);
-  //   } else {
-  //       setIsProcessing(false);
-  //       addLog("Investigation Complete.");
-  //   }
-  // };
   const startInvestigation = async () => {
     if (!inputText) return;
     setIsProcessing(true);
